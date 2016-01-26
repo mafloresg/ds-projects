@@ -1,0 +1,294 @@
+---
+title: "Transmission type impact on fuel economy"
+author: "Maria A. Flores"
+date: "24th October 2015"
+output: pdf_document
+---
+<br><br>
+
+## Executive summary
+
+The main goal of this work is to explore the relationship between a set of variables and the fuel economy, measured in miles per gallon (mpg). Particulary, we want to know the effect, if any, that an automatic or manual transmission have for the mpg value and quantify the difference. In order to do this, we use the _mtcars_ dataset. Firstly, we perform a brief exploratory analysis. Secondly, we try to find out some data relationships that could helps us in the selection of variables and fit different models. The resulting models tend to demonstrate that the type of transmission doesn't have an important effect on fuel economy.
+
+## Exploratory analysis
+
+```{r "Exploratory0", message = FALSE, warning=FALSE, echo=FALSE, results='hide'}
+library(dplyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+head(mtcars)
+```
+
+```{r "Exploratory1",warning=FALSE, echo=FALSE}
+difValues = length(row.names(mtcars))
+colNames = "Cars" 
+int = "Values"
+for(i in names(mtcars)) {
+    levs <- length(levels(as.factor(mtcars[,i])))
+    difValues <- cbind(difValues, levs); colNames <- cbind(colNames, i)
+    if(levs > 10){
+        if(!exists("numbers")){
+            numbers = i; sumNumbers = summary(mtcars[,i])
+        } 
+        else{
+            numbers = cbind(numbers, i); sumNumbers = rbind(sumNumbers, 
+                                                            summary(mtcars[,i]))
+        }
+    }
+    else{
+        int = cbind(int, i); tableDF = as.data.frame(table(mtcars[,i]));
+        colnames(tableDF) <- c("Values",i)
+        if(!exists("sumInt")){sumInt = tableDF}
+        else{sumInt = full_join(as.data.frame(sumInt),tableDF,by="Values")}
+    }
+}
+colnames(difValues) <- colNames; 
+rownames(sumNumbers) <- numbers; 
+sumInt = arrange(sumInt, Values);
+```
+
+Size of the data, summary for the continous variables and hit table for the discrete ones:
+```{r "Exploratory2",warning=FALSE, echo=FALSE}
+sprintf("%i cols x %i rows", ncol(mtcars), nrow(mtcars)); 
+```
+```{r "Exploratory3",warning=FALSE, echo=FALSE}
+#difValues 
+sumNumbers
+sumInt
+```
+
+## Model fitting
+
+The strategy for selecting the variables to be included in the model was: 
+
+1. Fit mpg vs all the rest. In this model none of the variables was relevant (all the p-values > 0.05).
+```{r "Fitting1",warning=FALSE, echo=FALSE, results='hide'}
+# 1
+f0 = lm(mpg ~ ., data=mtcars)
+summary(f0)
+```
+2. Create a correlation matrix and find those highly correlated with mpg, resulting on _wt, cyl, disp, hp_ (negative relationship). This seems to confirm the common sense, but of course, this conclusion could be biased without considering efficiency variables.
+```{r "Fitting2",warning=FALSE, echo=FALSE, results='hide'}
+# 2
+cor(mtcars)
+```
+3. Use the _step()_ function to try and select the best model automatically.
+```{r "Fitting3",warning=FALSE, echo=FALSE, results='hide'}
+# 3
+summary(step(lm(mpg ~ ., data = mtcars), trace = 0))$call
+```
+4. Try to fit mpg vs each variable individually. In this model all the variables are potentially relevant (p-values < 0.05). Fit mpg with _am_ as a factor with each of the other variables. Add an interaction term with _am_. Compare with the model offered by _step()_. Preselect the best models and compare them, taking in account the adjusted r-squared and residual standard error. We chose the model with the interaction term because it have more balanced values: _mpg ~ wt * factor(am)_
+```{r "Fitting4",warning=FALSE, echo=FALSE, results='hide'}
+# 4
+
+## A couple of functions to make the tests easier
+best_radj<-function(fit){ 
+    if(length(fit$coefficients[(fit$coefficients[,4] <= 0.05),4]) == 
+           length(fit$coefficients[,4])){
+        return (fit$adj.r.squared)
+        }
+    else{ return(0) }
+}
+
+eval_models <- function(l){
+    max_fit = 0
+    max_adj = 0
+    for(i in 1:10){
+        e = best_radj(l[[i]])
+        if(as.numeric(e) > max_adj){
+            max_fit = i
+            max_adj = e
+        }
+    }
+    return(colnames(mtcars)[max_fit+1])
+}
+
+## Tests with 1 variable
+f1 <- list()
+f1[[1]] = summary(lm(mpg ~ factor(cyl), data=mtcars))
+f1[[2]] = summary(lm(mpg ~ disp, data=mtcars))
+f1[[3]] = summary(lm(mpg ~ hp, data=mtcars))
+f1[[4]] = summary(lm(mpg ~ drat, data=mtcars))
+f1[[5]] = summary(lm(mpg ~ wt, data=mtcars))
+f1[[6]] = summary(lm(mpg ~ qsec, data=mtcars))
+f1[[7]] = summary(lm(mpg ~ factor(vs), data=mtcars))
+f1[[8]] = summary(lm(mpg ~ factor(am), data=mtcars))
+f1[[9]] = summary(lm(mpg ~ factor(gear), data=mtcars))
+f1[[10]] = summary(lm(mpg ~ factor(carb), data=mtcars))
+eval_models(f1)
+
+## Tests with two variables
+f2 <- list()
+f2[[1]] = summary(lm(mpg ~ factor(am) + factor(cyl), data=mtcars))
+f2[[2]] = summary(lm(mpg ~ factor(am) + disp, data=mtcars))
+f2[[3]] = summary(lm(mpg ~ factor(am) + hp, data=mtcars))
+f2[[4]] = summary(lm(mpg ~ factor(am) + drat, data=mtcars))
+f2[[5]] = summary(lm(mpg ~ factor(am) + wt, data=mtcars))
+f2[[6]] = summary(lm(mpg ~ factor(am) + qsec, data=mtcars))
+f2[[7]] = summary(lm(mpg ~ factor(am) + factor(vs), data=mtcars))
+f2[[8]] = summary(lm(mpg ~ factor(am), data=mtcars))
+f2[[9]] = summary(lm(mpg ~ factor(am) + factor(gear), data=mtcars))
+f2[[10]] = summary(lm(mpg ~ factor(am) + factor(carb), data=mtcars))
+eval_models(f2)
+
+## Tests with two variables with interaction
+f3 <- list()
+f3[[1]] = summary(lm(mpg ~ factor(am) * factor(cyl), data=mtcars))
+f3[[2]] = summary(lm(mpg ~ factor(am) * disp, data=mtcars))
+f3[[3]] = summary(lm(mpg ~ factor(am) * hp, data=mtcars))
+f3[[4]] = summary(lm(mpg ~ factor(am) * drat, data=mtcars))
+f3[[5]] = summary(lm(mpg ~ factor(am) * wt, data=mtcars))
+f3[[6]] = summary(lm(mpg ~ factor(am) * qsec, data=mtcars))
+f3[[7]] = summary(lm(mpg ~ factor(am) * factor(vs), data=mtcars))
+f3[[8]] = summary(lm(mpg ~ factor(am), data=mtcars))
+f3[[9]] = summary(lm(mpg ~ factor(am) * factor(gear), data=mtcars))
+f3[[10]] = summary(lm(mpg ~ factor(am) * factor(carb), data=mtcars))
+eval_models(f3)
+
+## Compare our best models
+model1 = lm(mpg ~ wt, data=mtcars)
+model2 = lm(mpg ~ hp + factor(am), data=mtcars)
+model3 = lm(mpg ~ wt + qsec + as.factor(am), data=mtcars)
+model4 = lm(mpg ~ wt * factor(am), data=mtcars)
+summary(model1)
+summary(model2)
+summary(model3)
+summary(model4)
+```
+The outliers (high leverage + high influence) deletion process shows that the model doesn't significantly change. But, as the data give strong evidence about the weight being the most important variable in the mpg, and other specialised studies (see _References_) agree on this, is interesting to try to disentangle this effect. In the figures in the _Appendix_, adjusting with _am_ reveals that the mean weight for the automatic vehicles are higher than the same value for the manual ones, impacting in the mpg. Reducing the dataset to those vehicles closer to the average weight balance the effect. If we repeat the process of fitting, in this case the best model is not as clear as before. We can choose the second one to be able to evaluate the _am_ impact: _mpg ~ hp + factor(am)_
+
+```{r "Fitting5",warning=FALSE, echo=FALSE, results='hide'}
+# Outliers
+b = cbind(row.names(hatvalues(model2)),hatvalues(model2), dfbetas(model2)[,2])
+colnames(b) <- c("hatvalues", "dfbetas")
+b[abs(b[,2]) > 2/sqrt(32),]
+rownames(b[abs(b[,2]) > 2/sqrt(32),])
+subset(b, (abs(b[,2]) > 2/sqrt(32)) 
+       & (abs((abs(b[,1]) - mean(abs(b[,1]))) / sd(abs(b[,1]))) > 1))
+
+
+mtOut = mtcars[!((abs(b[,2]) > 2/sqrt(32)) & 
+                     (abs((abs(b[,1]) - mean(abs(b[,1]))) / sd(abs(b[,1]))) > 1)),]
+altModel2 = lm(mpg ~ wt * factor(am), data=mtOut)
+summary(altModel2)
+
+mtcars[abs((mtcars$wt - mean(mtcars$wt)) / sd(mtcars$wt)) > 2,]
+mtOut3 = mtcars[!(abs((mtcars$wt - mean(mtcars$wt)) / sd(mtcars$wt)) > 2),]
+altModel3 = lm(mpg ~ wt * factor(am), data=mtOut3)
+summary(altModel3)
+```
+
+```{r "Fitting6",warning=FALSE, echo=FALSE, results='hide'}
+mtcars4 = mtcars
+mtcars4 = mutate(mtcars4, name=rownames(mtcars4), fsd=abs((mtcars4$wt - mean(mtcars4$wt)) / sd(mtcars4$wt)))
+mtcars4 = mtcars4[mtcars4$fsd <= 1,]
+rownames(mtcars4) <- mtcars4$name
+mtcars4 = mtcars4[1:11]
+cor(mtcars4)
+```
+
+```{r "Fitting7",warning=FALSE, echo=FALSE, results='hide'}
+summary(step(lm(mpg ~ ., data = mtcars4), trace = 0))$call
+```
+
+```{r "Fitting8",warning=FALSE, echo=FALSE, results='hide'}
+## Tests with 1 variable
+f4 <- list()
+f4[[1]] = summary(lm(mpg ~ factor(cyl), data=mtcars4))
+f4[[2]] = summary(lm(mpg ~ disp, data=mtcars4))
+f4[[3]] = summary(lm(mpg ~ hp, data=mtcars4))
+f4[[4]] = summary(lm(mpg ~ drat, data=mtcars4))
+f4[[5]] = summary(lm(mpg ~ wt, data=mtcars4))
+f4[[6]] = summary(lm(mpg ~ qsec, data=mtcars4))
+f4[[7]] = summary(lm(mpg ~ factor(vs), data=mtcars4))
+f4[[8]] = summary(lm(mpg ~ factor(am), data=mtcars4))
+f4[[9]] = summary(lm(mpg ~ factor(gear), data=mtcars4))
+f4[[10]] = summary(lm(mpg ~ factor(carb), data=mtcars4))
+eval_models(f4)
+
+## Tests with two variables
+f5 <- list()
+f5[[1]] = summary(lm(mpg ~ factor(am) + factor(cyl), data=mtcars4))
+f5[[2]] = summary(lm(mpg ~ factor(am) + disp, data=mtcars4))
+f5[[3]] = summary(lm(mpg ~ factor(am) + hp, data=mtcars4))
+f5[[4]] = summary(lm(mpg ~ factor(am) + drat, data=mtcars4))
+f5[[5]] = summary(lm(mpg ~ factor(am) + wt, data=mtcars4))
+f5[[6]] = summary(lm(mpg ~ factor(am) + qsec, data=mtcars4))
+f5[[7]] = summary(lm(mpg ~ factor(am) + factor(vs), data=mtcars4))
+f5[[8]] = summary(lm(mpg ~ factor(am), data=mtcars4))
+f5[[9]] = summary(lm(mpg ~ factor(am) + factor(gear), data=mtcars4))
+f5[[10]] = summary(lm(mpg ~ factor(am) + factor(carb), data=mtcars4))
+eval_models(f5)
+
+## Tests with two variables with interaction
+f6 <- list()
+f6[[1]] = summary(lm(mpg ~ factor(am) * factor(cyl), data=mtcars4))
+f6[[2]] = summary(lm(mpg ~ factor(am) * disp, data=mtcars4))
+f6[[3]] = summary(lm(mpg ~ factor(am) * hp, data=mtcars4))
+f6[[4]] = summary(lm(mpg ~ factor(am) * drat, data=mtcars4))
+f6[[5]] = summary(lm(mpg ~ factor(am) * wt, data=mtcars4))
+f6[[6]] = summary(lm(mpg ~ factor(am) * qsec, data=mtcars4))
+f6[[7]] = summary(lm(mpg ~ factor(am) * factor(vs), data=mtcars4))
+f6[[8]] = summary(lm(mpg ~ factor(am), data=mtcars4))
+f6[[9]] = summary(lm(mpg ~ factor(am) * factor(gear), data=mtcars4))
+f6[[10]] = summary(lm(mpg ~ factor(am) * factor(carb), data=mtcars4))
+eval_models(f6)
+
+model5 = lm(mpg ~ cyl, data=mtcars4)
+model6 = lm(mpg ~ hp + factor(am), data=mtcars4)
+model7 = lm(mpg ~ cyl + disp + hp + vs + gear, data=mtcars4)
+summary(model5)
+summary(model6)
+summary(model7)
+```
+
+Model                             | p-values                       | adj.r.sq | sigma
+--------------------------------- |------------------------------- |--------- |-------
+mpg ~ wt                          | all highly relevant            | 0.7446   | 3.046
+mpg ~ hp + factor(am)             | all highly relevant            | 0.767    | 2.909
+mpg ~ wt + qsec + as.factor(am)   | >0.05 on itc, low rel. on am   | 0.8336   | 2.459
+mpg ~ wt * factor(am)             | all highly and medium relevant | 0.8151   | 2.591
+--------------------------------- |------------------------------- |--------- |-------
+mpg ~ cyl                         | all highly relevant            | 0.7467   | 1.57
+mpg ~ hp + factor(am)             | all highly and medium relevant | 0.7091   | 1.682
+mpg ~ cyl + disp + hp + vs + gear | >0.05 on vs, some low rel.     | 0.8415   | 1.242
+
+
+## Results
+Surely, those regressions aren't optimal, but allow to fit a reasonable model for the analysed vehicles and extract some conclusions. The intuition was that the transmission type could be irrelevant. The key for mpg is to make the engine work in the optimal consumption zone for each speed and rpm and, theoretically, this can be achieved with any transmission type. The data agrees: the manual transmission have a slightly negative impact on the mpg of -5.3 miles per gallon. If we disregard the weight effect, the effect is the opposite, improving +2.2 miles per gallon. In both cases the values are not specially relevant.
+
+```{r "Results",warning=FALSE, echo=FALSE}
+summary(model4)$coef
+summary(model6)$coef
+```
+
+## Appendix
+```{r "Appendix",warning=FALSE, echo=FALSE, results='hide'}
+
+g1 <- ggplot(data = mtcars, aes(x=wt, y=mpg, color=as.factor(am))) + geom_point() + geom_smooth(method="lm") + theme(legend.position="bottom")
+g2 <- ggplot(data = mtcars4, aes(x=hp, y=mpg, color=as.factor(am))) + geom_point() + geom_smooth(method="lm") + theme(legend.position="bottom")
+g3 <- ggplot(data = mtcars, aes(x=factor(am), y=wt, color=as.factor(am))) + geom_boxplot() + theme(legend.position="none")
+g4 <- ggplot(data = mtcars4, aes(x=factor(am), y=hp, color=as.factor(am))) + geom_boxplot() + theme(legend.position="none")
+
+grid.arrange(g1, g2, g3, g4, ncol = 2, main = "mpg per am")
+
+plot(model4)
+plot(model6)
+
+plot(predict(model4), resid(model4), pch = '.')
+plot(predict(model6), resid(model6), pch = '.')
+```
+
+## References
+1. "Factors affecting automotive fuel economy" 
+US environmental protection agency, 1975
+[link](http://nepis.epa.gov/Exe/ZyNET.exe/9100S2LD.TXT?ZyActionD=ZyDocument&Client=EPA&Index=Prior+to+1976&Docs=&Query=&Time=&EndTime=&SearchMethod=1&TocRestrict=n&Toc=&TocEntry=&QField=&QFieldYear=&QFieldMonth=&QFieldDay=&IntQFieldOp=0&ExtQFieldOp=0&XmlQuery=&File=D%3A%5Czyfiles%5CIndex%20Data%5C70thru75%5CTxt%5C00000014%5C9100S2LD.txt&User=ANONYMOUS&Password=anonymous&SortMethod=h%7C-&MaximumDocuments=1&FuzzyDegree=0&ImageQuality=r75g8/r75g8/x150y150g16/i425&Display=p%7Cf&DefSeekPage=x&SearchBack=ZyActionL&Back=ZyActionS&BackDesc=Results%20page&MaximumPages=1&ZyEntry=1&SeekPage=x&ZyPURL)
+
+2. "What factors affect average fuel economy of US passenger vehicles?"
+Suman Gautman, 2010. Illinois Wesleyan University.
+[link](http://digitalcommons.iwu.edu/cgi/viewcontent.cgi?article=1103&context=econ_honproj)
+
+3. "Prestaciones y consumo: así influyen el peso, el motor y la aerodinámica"
+Auto10 magazine. Antonio Roncero
+[link](http://www.auto10.com/reportajes/prestaciones-y-consumo-asi-influyen-el-peso-el-motor-y-la-aerodinamica/635)
