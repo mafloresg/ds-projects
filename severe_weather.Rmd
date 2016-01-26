@@ -2,7 +2,7 @@
 title: "Analysis on impact of severe weather events"
 author: "Maria A. Flores"
 date: "21st June 2015"
-output: html_document
+output: pdf_document
 ---
 
 ***
